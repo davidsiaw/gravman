@@ -1,0 +1,370 @@
+
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Pacman</title>
+<meta name="viewport" content="initial-scale=1.0" />
+<script src="box2d.js"></script>
+<style>
+body {
+  margin: 0px;
+  font-family: helvetica, arial, sans serif;
+}
+</style>
+</head>
+
+<body>
+  <div id="content">
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <script type="text/javascript">
+
+  var b2Vec2 = Box2D.Common.Math.b2Vec2;
+  var b2BodyDef = Box2D.Dynamics.b2BodyDef;
+  var b2Body = Box2D.Dynamics.b2Body;
+  var b2FixtureDef = Box2D.Dynamics.b2FixtureDef;
+  var b2Fixture = Box2D.Dynamics.b2Fixture;
+  var b2World = Box2D.Dynamics.b2World;
+  var b2MassData = Box2D.Collision.Shapes.b2MassData;
+  var b2PolygonShape = Box2D.Collision.Shapes.b2PolygonShape;
+  var b2CircleShape = Box2D.Collision.Shapes.b2CircleShape;
+  var b2DebugDraw = Box2D.Dynamics.b2DebugDraw;
+  var b2Listener = Box2D.Dynamics.b2ContactListener;
+
+
+  var score = 0;
+
+
+  var x = 0, y = 0;
+  var vx = 0, vy = 0;
+  var ax = 0, ay = 0;
+
+  var sw = window.innerWidth;
+  var sh = window.innerHeight;
+
+  var simulating = true;
+
+  var cell_size = 60;
+  var margin = 10;
+
+  var view_w = sw - margin * 2;
+  var view_h = sh - margin * 2;
+
+  var cols = Math.floor(view_w / cell_size);
+  var rows = Math.floor(view_h / cell_size);
+
+  var cw = view_w / cols;
+  var ch = view_h / rows;
+
+  var sprites = {}
+  var walls = []
+  var pellets = []
+
+  var darkness = 0;
+
+  function add_sprite(x)
+  {
+    sprites[x] = new Image();
+    sprites[x].src = "img/" + x + ".png";
+  }
+
+  var world = new b2World(new b2Vec2(0, 10), true);
+
+  var listener = new b2Listener();
+  listener.BeginContact = function(contact)
+  {
+    if (contact.GetFixtureA().GetBody().name && contact.GetFixtureB().GetBody().name)
+    {
+      console.log('boom')
+      //simulating = false;
+    }
+  }
+  listener.EndContact = function(contact)
+  {
+    if (contact.GetFixtureA().GetBody().name && contact.GetFixtureB().GetBody().name)
+    {
+    }
+  }
+  world.SetContactListener(listener);
+
+  var chars = [];
+
+  function define_static_block(x, y, w, h)
+  {
+    var block_bodydef = new b2BodyDef;
+    block_bodydef.type = b2Body.b2_staticBody;
+    block_bodydef.position.x = x;
+    block_bodydef.position.y = y;
+
+    var block_fixture = new b2FixtureDef;
+    block_fixture.shape = new b2PolygonShape;
+    block_fixture.shape.SetAsBox(w / 2, h / 2);
+
+    world.CreateBody(block_bodydef).CreateFixture(block_fixture);
+  }
+
+  function define_character(x, y, name)
+  {
+    var char_bd = new b2BodyDef;
+    char_bd.type = b2Body.b2_dynamicBody;
+
+    char_bd.position.x = x/20;
+    char_bd.position.y = y/20;
+
+    var char_fx = new b2FixtureDef;
+    char_fx.density = 1.0;
+    char_fx.friction = 1.0;
+    char_fx.restitution = 0.5;
+    char_fx.shape = new b2CircleShape(1);
+
+    var char = world.CreateBody(char_bd);
+    char.CreateFixture(char_fx);
+    char.SetSleepingAllowed(false);
+    char.index = chars.length;
+    char.name = name;
+
+    chars.push(char);
+
+    return char;
+  }
+
+  function add_wall(x0, y0, x1, y1)
+  {
+    walls.push({x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1)});
+    var centerx = (x1 - x0) / 2 + x0;
+    var centery = (y1 - y0) / 2 + y0;
+    console.log(centerx, centery)
+    var ww = x1-x0;
+    var hh = y1-y0;
+    define_static_block((centerx*cw+margin)/20, (centery*ch+margin)/20, ww*cw/20 + 0.5, hh*ch/20 + 0.5);
+  }
+
+  function add_pellet(x, y)
+  {
+    pellets.push({x: x, y: y, eaten: false});
+  }
+
+  add_wall(1,1,1,4)
+  add_wall(1,1,2,1)
+
+  add_wall(1,6,1,9)
+  add_wall(1,9,2,9)
+
+  add_wall(4,1,4,4)
+  add_wall(3,1,4,1)
+
+  add_wall(4,6,4,9)
+  add_wall(3,9,4,9)
+
+  add_wall(2,3,2,7)
+  add_wall(2,3,3,3)
+  add_wall(2,7,3,7)
+
+  for (var i=0; i<rows; i++)
+  for (var j=0; j<cols; j++)
+  {
+    add_pellet(cw/2 + j*cw + margin, ch/2 + i*ch + margin)
+  }
+
+  define_static_block(sw/20, sh/20, sw, 1);     // bottom
+  define_static_block(sw/20, 0,     sw, 1);     // top
+  define_static_block(0,     sh/20, 1,     sh); // left
+  define_static_block(sw/20, sh/20, 1,     sh); // right
+
+  add_sprite('pacman');
+  add_sprite('blue');
+  add_sprite('red');
+
+  var hero = define_character(sw-20, sh/2, 'pacman');
+  define_character(sw/2, sh/2, 'blue');
+  define_character(sw/2, sh/2, 'red');
+
+
+  var canvas = document.getElementById("canvas");
+  var ctx = canvas.getContext("2d");
+  canvas.style.width = sw + "px";
+  canvas.style.height = sh + "px";
+  canvas.width = sw;
+  canvas.height = sh;
+
+  function setupDebugDraw() {
+   var b2DebugDraw = 
+               Box2D.Dynamics.b2DebugDraw
+   var debugDraw = new b2DebugDraw();
+   debugDraw.SetSprite(ctx);
+   debugDraw.SetDrawScale(20.0);
+   debugDraw.SetFillAlpha(0.3);
+   debugDraw.SetLineThickness(1.0);
+   debugDraw.SetFlags(
+     b2DebugDraw.e_shapeBit | 
+      b2DebugDraw.e_jointBit);
+   world.SetDebugDraw(debugDraw);
+  };
+
+  function draw_walls(width, color)
+  {
+    for (var idx in walls)
+    {
+      ctx.fillStyle = color;
+
+      var wall = walls[idx];
+      ctx.beginPath();
+      ctx.arc(wall.x0 * cw + margin, wall.y0 * ch + margin, width, 0, 2 * Math.PI, false);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(wall.x1 * cw + margin, wall.y1 * ch + margin, width, 0, 2 * Math.PI, false);
+      ctx.fill();
+
+      if (wall.x1 - wall.x0 > wall.y1 - wall.y0)
+      {
+        // horizontal
+        ctx.fillRect(
+          wall.x0 * cw + margin, 
+          wall.y0 * ch + margin - width, 
+          (wall.x1 - wall.x0) * cw,
+          width * 2
+        );
+      }
+      else
+      {
+        // vertical
+        ctx.fillRect(
+          wall.x0 * cw + margin - width, 
+          wall.y0 * ch + margin,
+          width * 2,
+          (wall.y1 - wall.y0) * ch
+        );
+      }
+    }
+  }
+
+  function draw()
+  {
+    //debugdraw();
+
+    for (var idx in pellets)
+    {
+      var pellet = pellets[idx];
+      if (pellet.eaten)
+      {
+
+      }
+      else
+      {
+        ctx.beginPath();
+        ctx.arc(pellet.x, pellet.y, 5, 0, 2 * Math.PI, false);
+        ctx.fillStyle = 'yellow';
+        ctx.fill();
+      }
+    }
+
+    for (var idx in chars)
+    {
+      var char = chars[idx];
+      ctx.save();
+      ctx.translate(char.GetPosition().x * 20, char.GetPosition().y * 20);
+      ctx.rotate(char.GetAngle());
+      ctx.translate(-20, -20);
+      ctx.drawImage(sprites[char.name], 0, 0, 40, 40);
+      ctx.restore();
+    }
+
+    // walls
+    draw_walls(5, 'blue')
+    draw_walls(3, 'black')
+  }
+
+  function debugdraw()
+  {
+    world.DrawDebugData();
+
+    for(var i = 0; i < cols; i++)
+    for(var j = 0; j < rows; j++)
+    {
+      ctx.beginPath();
+      ctx.rect(i * cw + margin,  j * ch + margin, cw, ch);
+      ctx.stroke();
+    }
+  }
+
+  function update()
+  {
+    if (simulating)
+    {
+      world.Step(1 / 25, 10, 10);
+      world.ClearForces();
+    }
+
+    var herox = hero.GetPosition().x * 20;
+    var heroy = hero.GetPosition().y * 20;
+    for (var idx in pellets)
+    {
+      var pellet = pellets[idx];
+      var dx = pellet.x - herox;
+      var dy = pellet.y - heroy;
+      if (!pellet.eaten && dx*dx < 400 && dy*dy < 400)
+      {
+        console.log('eat', pellet)
+        pellet.eaten = true;
+        score += 1;
+      }
+    }
+
+    //var landscapeOrientation = window.innerWidth/window.innerHeight > 1;
+    //if (landscapeOrientation) {
+    //  sphere.vx = sphere.vx + sphere.ay;
+    //  sphere.vy = sphere.vy + sphere.ax;
+    //} else {
+    //  sphere.vy = sphere.vy - sphere.ay;
+    //  sphere.vx = sphere.vx + sphere.ax;
+    //}
+    //sphere.vx = sphere.vx * 0.99;
+    //sphere.vy = sphere.vy * 0.99;
+    //sphere.y = parseInt(sphere.y + sphere.vy / 50);
+    //sphere.x = parseInt(sphere.x + sphere.vx / 50);
+//
+    //boundingBoxCheck();
+  }
+
+  //function boundingBoxCheck()
+  //{
+  //  if (sphere.x<0) { sphere.x = 0; sphere.vx = -sphere.vx; }
+  //  if (sphere.y<0) { sphere.y = 0; sphere.vy = -sphere.vy; }
+  //  if (sphere.x>sw) { sphere.x = sw; sphere.vx = -sphere.vx; }
+  //  if (sphere.y>sh) { sphere.y = sh; sphere.vy = -sphere.vy; }
+  //}
+
+  if (window.DeviceMotionEvent != undefined) {
+    window.ondevicemotion = function(e) {
+      //sphere.ax = e.accelerationIncludingGravity.x * 5;
+      //sphere.ay = e.accelerationIncludingGravity.y * 5;
+      world.SetGravity(new b2Vec2(e.accelerationIncludingGravity.x, -e.accelerationIncludingGravity.y));
+
+      document.getElementById("accelerationX").innerHTML = e.accelerationIncludingGravity.x;
+      document.getElementById("accelerationY").innerHTML = e.accelerationIncludingGravity.y;
+      document.getElementById("accelerationZ").innerHTML = e.accelerationIncludingGravity.z;
+
+      if ( e.rotationRate ) {
+        document.getElementById("rotationAlpha").innerHTML = e.rotationRate.alpha;
+        document.getElementById("rotationBeta").innerHTML = e.rotationRate.beta;
+        document.getElementById("rotationGamma").innerHTML = e.rotationRate.gamma;
+      }   
+    }
+
+    setupDebugDraw();
+    setInterval( function() {
+      ctx.beginPath();
+      ctx.rect(0, 0, sw, sh);
+      ctx.fillStyle = "black";
+      ctx.fill();
+      
+      update();
+      draw();
+    }, 25);
+
+  }
+  </script>
+</body>
+</html>
